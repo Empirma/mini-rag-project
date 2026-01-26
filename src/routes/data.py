@@ -22,7 +22,7 @@ data_router = APIRouter(
 @data_router.post("/upload/{project_id}")
 async def upload_data(request: Request,project_id: str, file: UploadFile, app_settings: Settings=Depends(get_settings)):
 
-    project_model = ProjectModel(
+    project_model = await ProjectModel.create_instance(
         db_client=request.app.db_client
     )
 
@@ -79,7 +79,7 @@ async def process_endpoint(request: Request, project_id: str, process_request: P
     overlap_size = process_request.overlap_size
     do_reset = process_request.do_reset
 
-    project_model = ProjectModel(
+    project_model = await ProjectModel.create_instance(
         db_client=request.app.db_client
     )
 
@@ -90,7 +90,17 @@ async def process_endpoint(request: Request, project_id: str, process_request: P
 
     process_controller = ProcessController(project_id=project_id)
 
-    file_content = process_controller.get_file_content(file_id=file_id)
+    try:
+        file_content = process_controller.get_file_content(file_id=file_id)
+    except (FileNotFoundError, RuntimeError) as e:
+        logger.error(f"File not found or error loading file: {e}")
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content={
+                "signal": ResponseSignal.FILE_NOT_FOUND.value,
+                "message": f"File with id '{file_id}' not found"
+            }
+        )
 
     file_chunks = process_controller.process_file_content(
         file_content=file_content,
@@ -117,7 +127,7 @@ async def process_endpoint(request: Request, project_id: str, process_request: P
         for i, chunk in enumerate(file_chunks)
     ]
 
-    chunk_model = ChunkModel(
+    chunk_model = await ChunkModel.create_instance(
         db_client=request.app.db_client
     )
 
